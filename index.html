@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>SW Todos</title>
+    <script type="module" src="main.js"></script>
+  </head>
+  <body>
+    <template shadowrootmode="open">
+     <main>
+      <h1>SW Todos</h1>
+      <section>
+        <form action="/create" method="POST">
+          <label>
+            <span>Title</span>
+            <input name="title" type="text" required>
+          </label>
+          <button type="submit">Add</button>
+        </form>
+      </section>
+      <section>
+        <h2>Todos</h2>
+        <slot name="todo-list">All done!</slot>
+      </section>
+    </main>
+    </template>
+    <!-- lazy -->
+  </body>
+</html>

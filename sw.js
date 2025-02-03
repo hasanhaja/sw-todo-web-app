@@ -1,0 +1,194 @@
+const VERSION = "0.0.1";
+const STATIC_CACHE_NAME = `static-cache_${VERSION}`;
+const DATABASE_NAME = "todo-db";
+const STORE_NAME = "todos";
+let store;
+
+function defaultGetStore() {
+  if (!store) {
+    store = createStore(DATABASE_NAME, STORE_NAME);
+  }
+  return store;
+}
+
+// TODO Cache manifest etc, but not service worker. Let the browser handle that.
+const assets = [
+  "/",
+  "/index.html",
+  "/main.js",
+];
+
+async function cacheStatic() {
+  const cache = await caches.open(STATIC_CACHE_NAME);
+  await cache.addAll(assets);
+  console.log(`${STATIC_CACHE_NAME} has been updated`);
+}
+
+async function cleanCache() {
+  const keys = await caches.keys();
+  return Promise.all(
+    keys
+      .filter((key) => key !== STATIC_CACHE_NAME)
+      .map((key) => caches.delete(key))
+  );
+}
+
+async function init() {
+  await cacheStatic();
+  // TODO Set up DB, etc
+  store = createStore(DATABASE_NAME, STORE_NAME);
+}
+
+self.addEventListener("install", (e) => {
+  console.log(`Version ${VERSION} installed`);
+  e.waitUntil(init());
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (e) => {
+  console.log(`Version ${VERSION} activated`);
+  e.waitUntil(async () => {
+    await cleanCache();
+    await self.clients.claim(); 
+  });
+});
+
+async function respondWithCache(request) {
+  const cacheRes = await caches.match(request); 
+  if (cacheRes !== undefined) {
+    return cacheRes;
+  } 
+  // fetch anyways incase the cache is stale
+  const fetchRes = await fetch(request);
+  const cache = await caches.open(STATIC_CACHE_NAME);
+  cache.put(request, fetchRes.clone());
+  return fetchRes;
+}
+
+function list(id, title, completed) {
+  return `
+    <li>
+      ${ completed ? 
+          `<s>${title}</s> <a href="/delete?id=${id}">Delete</a>` 
+        : `<a href="/complete?id=${id}">Complete</a> ${title} <a href="/delete?id=${id}">Delete</a>`}
+    </li>
+  `;
+}
+
+function generateTodos(data) {
+  return `
+    <ul slot="todo-list">
+      ${data
+          .map(({ id, title, completed }) => list(id, title, completed))
+          .join("")
+      }
+    </ul>
+  `;
+}
+
+function spliceResponseWithData(cachedContent, data) {
+  const lazyBoundary = "<!-- lazy -->";
+  const [head, tail] = cachedContent.split(lazyBoundary);
+  return `
+    ${head}
+    ${generateTodos(data)}
+    ${tail}
+  `;
+}
+
+// IndexedDB promise wrappers lifted from Jake Archibald's idb-keyval lib: https://github.com/jakearchibald/idb-keyval/blob/main/src/index.ts
+function promisifyRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.oncomplete = request.onsuccess = () => resolve(request.result);
+    request.onabort = request.onerror = () => reject(request.error);
+  });
+}
+
+function createStore(dbName, storeName) {
+  const request = self.indexedDB.open(dbName);
+  request.onupgradeneeded = () => request.result.createObjectStore(storeName);
+  const dbPromise = promisifyRequest(request);
+
+  return (transactionMode, fn) => {
+    dbPromise.then((db) => 
+      fn(db.transaction(storeName, transactionMode).objectStore(storeName))
+    );
+  };
+}
+
+function set(key, value, customStore = defaultGetStore()) {
+  return customStore("readwrite", (store) => {
+    store.put(value, key);
+    return promisifyRequest(store.transaction);
+  });
+}
+
+function get(key, customStore = defaultGetStore()) {
+  return customStore("readonly", (store) => promisifyRequest(store.get(key))); 
+}
+
+function update(key, updater, customStore = defaultGetStore()) {
+  return customStore("readwrite", (store) => new Promise((resolve, reject) => {
+    store.get(key).onsuccess = (e) => {
+      try {
+        store.put(updater(e.result), key);
+        resolve(promisifyRequest(store.transaction));
+      } catch (err) {
+        reject(err);
+      }
+    };
+  }));
+}
+
+function delete(key, customStore = defaultGetStore()) {
+  return customStore("readwrite", (store) => {
+    store.delete(key);
+    return promisifyRequest(store.transaction);
+  });
+}
+
+function entries(customStore = defaultGetStore()) {
+  return customStore(
+    "readonly", 
+    (store) => Promise.all([
+      promisifyRequest(store.getAllKeys()),
+      promisifyRequest(store.getAll()),
+    ]).then(([keys, values]) => keys.map((key, idx) => [key, values[idx]]))
+  );
+}
+
+// const content = `
+//       <section>
+//         <h2>Server content</h2>
+//         <p>This content was generated on the service worker pretending to be the real server.</p>
+//       </section>
+//     `;
+//     const headers = new Headers();
+//     headers.append("Content-Type", "text/html");
+
+//     const res = new Response(content, { status: 200, statusText: "OK", headers });
+//     e.respondWith(res);
+self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
+  const path = url.pathname;
+
+  if (path === "/" || path === "/index.html") {
+    const data = null;
+    if (data) {
+      // modify cached response and respond with that   
+    } else {
+      e.respondWith(respondWithCache(e.request));
+    }
+  } else if (path === "/create") {
+    
+    // TODO redirect back to index
+  } else if (path === "/delete") {
+    // handle query params
+
+  } else if (path === "/complete") {
+    // handle query params
+
+  } else if (assets.includes(path)) {
+    e.respondWith(respondWithCache(e.request));
+  }
+};
