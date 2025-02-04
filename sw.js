@@ -65,6 +65,25 @@ async function respondWithCache(request) {
   return fetchRes;
 }
 
+async function respondWithSpliced() {
+  const res = await caches.match("/");
+  const clonedRes = res.clone();
+  const originalBody = await clonedRes.text();
+
+  const [_, data] = await entries(); 
+  const newBody = spliceResponseWithData(originalBody, data);
+
+  return new Response(newBody, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
+}
+
+async function redirect(path) {
+  return Response.redirect(path, 303);
+}
+
 function list(id, title, completed) {
   return `
     <li>
@@ -75,6 +94,10 @@ function list(id, title, completed) {
   `;
 }
 
+/**
+  * @params {TodoItem[]} data
+  * @returns {string}
+  */
 function generateTodos(data) {
   return `
     <ul slot="todo-list">
@@ -86,7 +109,16 @@ function generateTodos(data) {
   `;
 }
 
+/**
+  * @params {string} cachedContent 
+  * @params {TodoItem[]} data
+  * @returns {string}
+  */
 function spliceResponseWithData(cachedContent, data) {
+  if (!data) {
+    return cachedContent;
+  }
+
   const lazyBoundary = "<!-- lazy -->";
   const [head, tail] = cachedContent.split(lazyBoundary);
   return `
@@ -140,7 +172,7 @@ function update(key, updater, customStore = defaultGetStore()) {
   }));
 }
 
-function delete(key, customStore = defaultGetStore()) {
+function del(key, customStore = defaultGetStore()) {
   return customStore("readwrite", (store) => {
     store.delete(key);
     return promisifyRequest(store.transaction);
@@ -155,6 +187,29 @@ function entries(customStore = defaultGetStore()) {
       promisifyRequest(store.getAll()),
     ]).then(([keys, values]) => keys.map((key, idx) => [key, values[idx]]))
   );
+}
+
+/**
+  * @typedef {Object} TodoItem
+  * @property {string} id
+  * @property {string} title
+  * @property {boolean} completed
+  */
+
+/**
+  * @param {string} title
+  * @returns {[string, TodoItem]}
+  */
+function createTodo(title) {
+  const id = self.crypto.randomUUID();
+  return [
+    id,
+    { 
+      id,
+      title,
+      completed: false,
+    },
+  ]
 }
 
 // const content = `
@@ -173,22 +228,19 @@ self.addEventListener("fetch", (e) => {
   const path = url.pathname;
 
   if (path === "/" || path === "/index.html") {
-    const data = null;
-    if (data) {
-      // modify cached response and respond with that   
-    } else {
-      e.respondWith(respondWithCache(e.request));
-    }
+    e.respondWith(respondWithSpliced());
   } else if (path === "/create") {
-    
-    // TODO redirect back to index
+    // TODO Create logic
+
+    e.respondWith(redirect("/"));
   } else if (path === "/delete") {
-    // handle query params
+    // TODO delete logic
 
+    e.respondWith(redirect("/"));
   } else if (path === "/complete") {
-    // handle query params
-
+    // TODO complete logic
+    e.respondWith(redirect("/"));
   } else if (assets.includes(path)) {
     e.respondWith(respondWithCache(e.request));
   }
-};
+});
