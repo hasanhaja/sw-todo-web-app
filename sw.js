@@ -53,81 +53,6 @@ self.addEventListener("activate", (e) => {
   });
 });
 
-async function respondWithCache(request) {
-  const cacheRes = await caches.match(request); 
-  if (cacheRes !== undefined) {
-    return cacheRes;
-  } 
-  // fetch anyways incase the cache is stale
-  const fetchRes = await fetch(request);
-  const cache = await caches.open(STATIC_CACHE_NAME);
-  cache.put(request, fetchRes.clone());
-  return fetchRes;
-}
-
-async function respondWithSpliced() {
-  const res = await caches.match("/");
-  const clonedRes = res.clone();
-  const originalBody = await clonedRes.text();
-
-  const [_, data] = await entries(); 
-  const newBody = spliceResponseWithData(originalBody, data);
-
-  return new Response(newBody, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: res.headers,
-  });
-}
-
-async function redirect(path) {
-  return Response.redirect(path, 303);
-}
-
-function list(id, title, completed) {
-  return `
-    <li>
-      ${ completed ? 
-          `<s>${title}</s> <a href="/delete?id=${id}">Delete</a>` 
-        : `<a href="/complete?id=${id}">Complete</a> ${title} <a href="/delete?id=${id}">Delete</a>`}
-    </li>
-  `;
-}
-
-/**
-  * @params {TodoItem[]} data
-  * @returns {string}
-  */
-function generateTodos(data) {
-  return `
-    <ul slot="todo-list">
-      ${data
-          .map(({ id, title, completed }) => list(id, title, completed))
-          .join("")
-      }
-    </ul>
-  `;
-}
-
-/**
-  * @params {string} cachedContent 
-  * @params {TodoItem[]} data
-  * @returns {string}
-  */
-function spliceResponseWithData(cachedContent, data) {
-  if (!data) {
-    return cachedContent;
-  }
-
-  const lazyBoundary = "<!-- lazy -->";
-  const [head, tail] = cachedContent.split(lazyBoundary);
-  return `
-    ${head}
-    ${generateTodos(data)}
-    ${tail}
-  `;
-}
-
 // IndexedDB promise wrappers lifted from Jake Archibald's idb-keyval lib: https://github.com/jakearchibald/idb-keyval/blob/main/src/index.ts
 function promisifyRequest(request) {
   return new Promise((resolve, reject) => {
@@ -186,6 +111,11 @@ function entries(customStore = defaultGetStore()) {
       promisifyRequest(store.getAllKeys()),
       promisifyRequest(store.getAll()),
     ]).then(([keys, values]) => keys.map((key, idx) => [key, values[idx]]))
+    .then((arr) => {
+      console.log("DEBUG: arr:", arr);
+      console.log("DEBUG: typeof arr:", typeof arr);
+      return arr;
+    })
   );
 }
 
@@ -212,6 +142,84 @@ function createTodo(title) {
   ]
 }
 
+async function respondWithCache(request) {
+  const cacheRes = await caches.match(request); 
+  if (cacheRes !== undefined) {
+    return cacheRes;
+  } 
+  // fetch anyways incase the cache is stale
+  const fetchRes = await fetch(request);
+  const cache = await caches.open(STATIC_CACHE_NAME);
+  cache.put(request, fetchRes.clone());
+  return fetchRes;
+}
+
+async function respondWithSpliced() {
+  const res = await caches.match("/");
+  const clonedRes = res.clone();
+  const originalBody = await clonedRes.text();
+
+  console.log("DEBUG: Called");
+  const myEntries = await entries(); 
+  console.log("DEBUG: Call awaited");
+  console.log("DEBUG: myEntries:", myEntries);
+  const newBody = spliceResponseWithData(originalBody, myEntries?.[1]);
+
+  return new Response(newBody, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
+}
+
+async function redirect(path) {
+  return Response.redirect(path, 303);
+}
+
+function list(id, title, completed) {
+  return `
+    <li>
+      ${ completed ? 
+          `<s>${title}</s> <a href="/delete?id=${id}">Delete</a>` 
+        : `<a href="/complete?id=${id}">Complete</a> ${title} <a href="/delete?id=${id}">Delete</a>`}
+    </li>
+  `;
+}
+
+/**
+  * @params {TodoItem[]} data
+  * @returns {string}
+  */
+function generateTodos(data) {
+  return `
+    <ul slot="todo-list">
+      ${data
+          .map(({ id, title, completed }) => list(id, title, completed))
+          .join("")
+      }
+    </ul>
+  `;
+}
+
+/**
+  * @params {string} cachedContent 
+  * @params {TodoItem[]} data
+  * @returns {string}
+  */
+function spliceResponseWithData(cachedContent, data) {
+  if (!data) {
+    return cachedContent;
+  }
+
+  const lazyBoundary = "<!-- lazy -->";
+  const [head, tail] = cachedContent.split(lazyBoundary);
+  return `
+    ${head}
+    ${generateTodos(data)}
+    ${tail}
+  `;
+}
+
 // const content = `
 //       <section>
 //         <h2>Server content</h2>
@@ -229,9 +237,14 @@ self.addEventListener("fetch", (e) => {
 
   if (path === "/" || path === "/index.html") {
     e.respondWith(respondWithSpliced());
+    // e.respondWith(respondWithCache(e.request));
   } else if (path === "/create") {
-    // TODO Create logic
-
+    // TODO Wait until?
+    e.request.text()
+      .then((text) => new URLSearchParams(text))
+      .then(([title, _]) => title)
+      .then(([, value]) => createTodo(value))
+      .then(([ id, value ]) => set(id, value));
     e.respondWith(redirect("/"));
   } else if (path === "/delete") {
     // TODO delete logic
