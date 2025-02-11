@@ -66,11 +66,10 @@ function createStore(dbName, storeName) {
   request.onupgradeneeded = () => request.result.createObjectStore(storeName);
   const dbPromise = promisifyRequest(request);
 
-  return (transactionMode, fn) => {
+  return (transactionMode, fn) =>
     dbPromise.then((db) => 
       fn(db.transaction(storeName, transactionMode).objectStore(storeName))
     );
-  };
 }
 
 function set(key, value, customStore = defaultGetStore()) {
@@ -111,11 +110,6 @@ function entries(customStore = defaultGetStore()) {
       promisifyRequest(store.getAllKeys()),
       promisifyRequest(store.getAll()),
     ]).then(([keys, values]) => keys.map((key, idx) => [key, values[idx]]))
-    .then((arr) => {
-      console.log("DEBUG: arr:", arr);
-      console.log("DEBUG: typeof arr:", typeof arr);
-      return arr;
-    })
   );
 }
 
@@ -159,11 +153,9 @@ async function respondWithSpliced() {
   const clonedRes = res.clone();
   const originalBody = await clonedRes.text();
 
-  console.log("DEBUG: Called");
-  const myEntries = await entries(); 
-  console.log("DEBUG: Call awaited");
-  console.log("DEBUG: myEntries:", myEntries);
-  const newBody = spliceResponseWithData(originalBody, myEntries?.[1]);
+  const allEntries= await entries();
+  const data = allEntries.map(([, todoItem]) => todoItem);
+  const newBody = spliceResponseWithData(originalBody, data);
 
   return new Response(newBody, {
     status: res.status,
@@ -220,17 +212,6 @@ function spliceResponseWithData(cachedContent, data) {
   `;
 }
 
-// const content = `
-//       <section>
-//         <h2>Server content</h2>
-//         <p>This content was generated on the service worker pretending to be the real server.</p>
-//       </section>
-//     `;
-//     const headers = new Headers();
-//     headers.append("Content-Type", "text/html");
-
-//     const res = new Response(content, { status: 200, statusText: "OK", headers });
-//     e.respondWith(res);
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   const path = url.pathname;
