@@ -218,18 +218,18 @@ self.addEventListener("fetch", (e) => {
 
   if (path === "/" || path === "/index.html") {
     e.respondWith(respondWithSpliced());
-    // e.respondWith(respondWithCache(e.request));
   } else if (path === "/create") {
-    // TODO Wait until?
-    e.request.text()
-      .then((text) => new URLSearchParams(text))
-      .then(([title, _]) => title)
-      .then(([, value]) => createTodo(value))
-      .then(([ id, value ]) => set(id, value));
+    e.waitUntil(
+      e.request.text()
+        .then((text) => new URLSearchParams(text))
+        .then(([title, _]) => title)
+        .then(([, value]) => createTodo(value))
+        .then(([ id, value ]) => set(id, value))
+    )
     e.respondWith(redirect("/"));
   } else if (path === "/delete") {
-    // TODO delete logic
-
+    const id = url.searchParams.get("id");
+    e.waitUntil(del(id));
     e.respondWith(redirect("/"));
   } else if (path === "/complete") {
     // TODO complete logic
