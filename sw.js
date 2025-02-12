@@ -35,7 +35,6 @@ async function cleanCache() {
 
 async function init() {
   await cacheStatic();
-  // TODO Set up DB, etc
   store = createStore(DATABASE_NAME, STORE_NAME);
 }
 
@@ -85,9 +84,10 @@ function get(key, customStore = defaultGetStore()) {
 
 function update(key, updater, customStore = defaultGetStore()) {
   return customStore("readwrite", (store) => new Promise((resolve, reject) => {
-    store.get(key).onsuccess = (e) => {
+    const request = store.get(key);
+    request.onsuccess = () => {
       try {
-        store.put(updater(e.result), key);
+        store.put(updater(request.result), key);
         resolve(promisifyRequest(store.transaction));
       } catch (err) {
         reject(err);
@@ -134,6 +134,17 @@ function createTodo(title) {
       completed: false,
     },
   ]
+}
+
+/**
+  * @param {TodoItem} todo
+  * @returns {TodoItem}
+  */
+function completeTodo(todo) {
+  return {
+    ...todo,
+    completed: true,
+  };
 }
 
 async function respondWithCache(request) {
@@ -232,7 +243,8 @@ self.addEventListener("fetch", (e) => {
     e.waitUntil(del(id));
     e.respondWith(redirect("/"));
   } else if (path === "/complete") {
-    // TODO complete logic
+    const id = url.searchParams.get("id");
+    e.waitUntil(update(id, completeTodo));
     e.respondWith(redirect("/"));
   } else if (assets.includes(path)) {
     e.respondWith(respondWithCache(e.request));
