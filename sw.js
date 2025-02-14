@@ -4,6 +4,8 @@ const DATABASE_NAME = "todo-db";
 const STORE_NAME = "todos";
 let store;
 
+const sanitizerBc = new BroadcastChannel("html-sanitizer");
+
 function defaultGetStore() {
   if (!store) {
     store = createStore(DATABASE_NAME, STORE_NAME);
@@ -51,6 +53,31 @@ self.addEventListener("activate", (e) => {
     await self.clients.claim(); 
   });
 });
+
+// BroadcastChannel promise wrapper
+
+/**
+  * @param {object} message
+  * @param {BroadcastChannel} chan
+  *
+  * @returns {Promise<object>}
+  */
+function post(message, chan) {
+  return new Promise((resolve, reject) => {
+    const messageId = `${chan.name}-${self.crypto.randomUUID()}`;
+    const controller = new AbortController();
+
+    chan.addEventListener("message", (e) => {
+      const { _id, ...data} = e.data
+      if (_id === messageId) {
+        resolve(data);
+        controller.abort();
+      }
+    }, { signal: controller.signal });
+
+    chan.postMessage({ _id: messageId, ...message }); 
+  });
+}
 
 // IndexedDB promise wrappers lifted from Jake Archibald's idb-keyval lib: https://github.com/jakearchibald/idb-keyval/blob/main/src/index.ts
 function promisifyRequest(request) {
@@ -249,6 +276,24 @@ self.addEventListener("fetch", (e) => {
 
   if (path === "/" || path === "/index.html") {
     e.respondWith(respondWithSpliced());
+  } else if (path === "/postMessage1") {
+    e.waitUntil(
+      post({ path: "first", count: 0, increment: 1 }, sanitizerBc)
+      .then((data) => {
+        console.log("SW data:", data);
+      })
+    ); 
+
+    e.respondWith(redirect("/"));
+  } else if (path === "/postMessage2") {
+    e.waitUntil(
+      post({ path: "second", count: 0, increment: 10 }, sanitizerBc)
+      .then((data) => {
+        console.log("SW data:", data);
+      })
+    ); 
+
+    e.respondWith(redirect("/"));
   } else if (path === "/create") {
     e.waitUntil(
       e.request.text()
@@ -257,7 +302,7 @@ self.addEventListener("fetch", (e) => {
         .then(([, value]) => escapeHtml(value))
         .then((value) => createTodo(value))
         .then(([ id, value ]) => set(id, value))
-    )
+    );
     e.respondWith(redirect("/"));
   } else if (path === "/delete") {
     const id = url.searchParams.get("id");
