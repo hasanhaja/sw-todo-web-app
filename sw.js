@@ -190,7 +190,7 @@ function list(id, title, completed) {
 }
 
 /**
-  * @params {TodoItem[]} data
+  * @param {TodoItem[]} data
   * @returns {string}
   */
 function generateTodos(data) {
@@ -205,8 +205,8 @@ function generateTodos(data) {
 }
 
 /**
-  * @params {string} cachedContent 
-  * @params {TodoItem[]} data
+  * @param {string} cachedContent 
+  * @param {TodoItem[]} data
   * @returns {string}
   */
 function spliceResponseWithData(cachedContent, data) {
@@ -223,6 +223,26 @@ function spliceResponseWithData(cachedContent, data) {
   `;
 }
 
+const ENTITY_MAP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+  '/': '&#x2F;',
+  '`': '&#x60;',
+  '=': '&#x3D;'
+};
+
+/**
+  * Taken from Mustache: https://github.com/janl/mustache.js/blob/master/mustache.js#L60C1-L75C2
+  * @param {string} unsafe
+  * @returns {string}
+  */
+function escapeHtml(unsafe) {
+  return unsafe.replace(/[&<>"'`=\/]/g, s => ENTITY_MAP[s]);
+}
+
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   const path = url.pathname;
@@ -234,7 +254,8 @@ self.addEventListener("fetch", (e) => {
       e.request.text()
         .then((text) => new URLSearchParams(text))
         .then(([title, _]) => title)
-        .then(([, value]) => createTodo(value))
+        .then(([, value]) => escapeHtml(value))
+        .then((value) => createTodo(value))
         .then(([ id, value ]) => set(id, value))
     )
     e.respondWith(redirect("/"));
